@@ -25,12 +25,12 @@ fn create_text(position: (f64, f64), text: &str) -> Text {
         .set("font-size", 8)
         .set("fill", "green")
 }
-fn create_line(from: (f64, f64), to: (f64, f64), color: &str) -> Path {
+fn create_line(from: (f64, f64), to: (f64, f64), color: &str, width: f64) -> Path {
     let data = Data::new().move_to(from).line_to(to);
     Path::new()
         .set("fill", "none")
         .set("stroke", color)
-        .set("stroke-width", 0.4)
+        .set("stroke-width", width)
         .set("stroke-linejoin", "square")
         .set("stroke-linecap", "round")
         .set("d", data)
@@ -130,11 +130,11 @@ fn main() {
                         let y_100 = (y + 100.0 * VALUE_SCALE) * Y_SCALE + PAGE_HEIGHT;
                         let y_150 = (y + 150.0 * VALUE_SCALE) * Y_SCALE + PAGE_HEIGHT;
 
-                        let line = create_line((0.0, y_50), (PAGE_WIDTH, y_50), "green");
+                        let line = create_line((0.0, y_50), (PAGE_WIDTH, y_50), "green", 0.4);
                         paths.push(Box::new(line));
-                        let line = create_line((0.0, y_100), (PAGE_WIDTH, y_100), "blue");
+                        let line = create_line((0.0, y_100), (PAGE_WIDTH, y_100), "blue", 0.4);
                         paths.push(Box::new(line));
-                        let line = create_line((0.0, y_150), (PAGE_WIDTH, y_150), "red");
+                        let line = create_line((0.0, y_150), (PAGE_WIDTH, y_150), "red", 0.4);
                         paths.push(Box::new(line));
 
                         let text = create_text((0.0, y_50), &date);
@@ -148,7 +148,8 @@ fn main() {
                     y *= Y_SCALE;
                     y += PAGE_HEIGHT;
 
-                    let point = create_line((x, y), (x, y), "black");
+                    // create a line of zero length
+                    let point = create_line((x, y), (x, y), "black", 1.0);
                     paths.push(Box::new(point));
 
                     if day > DAYS_PER_PAGE || (record_num > MAX_RECORD_READ) {
