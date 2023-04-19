@@ -8,6 +8,7 @@ extern crate xml;
 use xml::reader::{EventReader, XmlEvent};
 
 use std::fs::File;
+use std::io::prelude::*;
 use std::io::BufReader;
 
 use svg::node::element::path::Data;
@@ -81,6 +82,8 @@ const Y_SCALE: f64 = -400.0;
 const MAX_RECORD_READ: i32 = 108_500_000;
 
 fn main() {
+    let path = "output.log";
+    let mut output = File::create(path).unwrap();
     //
     let mut filenum: i32 = 0;
     let mut paths: Vec<Box<dyn svg::node::Node>> = Vec::new();
@@ -111,17 +114,20 @@ fn main() {
                     let nn = n.as_str();
                     match nn {
                         "startDate" => watch_record.start_date = v.clone(),
-                        "value" if { name.to_string() == "Record" } => {
+                        "value" => {
                             let vv: Result<f64, std::num::ParseFloatError> = v.parse();
                             match vv {
-                                Ok(vv) => watch_record.value = vv,
-                                Err(e) => {
-                                    println!("ERR: {:?}", e);
-                                    println!("v is: {:?}", v)
-                                }
+                                Ok(vv) if { vv > 10.0 && vv < 300.0 } => watch_record.value = vv,
+                                // Err(e) => (){
+                                //     println!("ERR: {:?}", e);
+                                //     println!("v is: {:?} ", v);
+                                // }
+                                _ => (),
                             }
-                            // watch_record.value = v.clone().parse();//.unwrap_or_default()
                         }
+                        // TODO!
+                        // need to make sure: unit="count/min" 
+                        // unit is name and "count/min" is value
                         "sourceName" if { v.ends_with("Watch") } => is_watch_record = true,
                         _ => (),
                     }
@@ -130,9 +136,12 @@ fn main() {
                 if is_watch_record {
                     let (mut x, mut y, v, date) = format_watch_record(watch_record);
 
+                    let writeline = format!("{} {} {} {}", &y, &v, &date, &x);
+                    writeln!(output, "{}", writeline).ok();
+
                     let yy = y.clone().to_string();
                     if yy != old_start_date {
-                        println!("> filenum: {}, date: {}", filenum, &date);
+                        // println!("> filenum: {}, date: {}", filenum, &date);
                         old_start_date = yy;
 
                         y = day as f64 * DAY_SCALE;
