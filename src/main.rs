@@ -78,7 +78,7 @@ const DAY_SCALE: f64 = 0.13;
 const VALUE_SCALE: f64 = 0.001;
 const X_SCALE: f64 = PAGE_WIDTH;
 const Y_SCALE: f64 = -400.0;
-const MAX_RECORD_READ: i32 = 208500;
+const MAX_RECORD_READ: i32 = 108_500_000;
 
 fn main() {
     //
@@ -100,7 +100,9 @@ fn main() {
         record_num += 1;
 
         match &e {
-            Ok(XmlEvent::StartElement { attributes, .. }) => {
+            Ok(XmlEvent::StartElement {
+                name, attributes, ..
+            }) => {
                 let mut watch_record = WatchRecord::default();
                 let mut is_watch_record = false;
                 for i in attributes {
@@ -109,7 +111,17 @@ fn main() {
                     let nn = n.as_str();
                     match nn {
                         "startDate" => watch_record.start_date = v.clone(),
-                        "value" => watch_record.value = v.clone().parse().unwrap_or_default(),
+                        "value" if { name.to_string() == "Record" } => {
+                            let vv: Result<f64, std::num::ParseFloatError> = v.parse();
+                            match vv {
+                                Ok(vv) => watch_record.value = vv,
+                                Err(e) => {
+                                    println!("ERR: {:?}", e);
+                                    println!("v is: {:?}", v)
+                                }
+                            }
+                            // watch_record.value = v.clone().parse();//.unwrap_or_default()
+                        }
                         "sourceName" if { v.ends_with("Watch") } => is_watch_record = true,
                         _ => (),
                     }
@@ -137,7 +149,7 @@ fn main() {
                         let line = create_line((0.0, y_150), (PAGE_WIDTH, y_150), "red", 0.4);
                         paths.push(Box::new(line));
 
-                        let text = create_text((0.0, y_50), &date);
+                        let text = create_text((0.0, y_50 + 8.0), &date);
                         paths.push(Box::new(text));
                         day += 1;
                     }
