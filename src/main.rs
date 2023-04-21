@@ -1,4 +1,4 @@
-// #![allow(dead_code, unused_variables, unused_assignments, unused_imports)]
+#![allow(dead_code, unused_variables, unused_assignments, unused_imports)]
 
 // read Apple watch XML and output
 // the heart rate data to SVG
@@ -10,12 +10,13 @@ use xml::reader::{EventReader, XmlEvent};
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
+use std::process::Output;
 
 use svg::node::element::path::Data;
 use svg::node::element::{Path, Text};
 use svg::Document;
 
-fn create_text(position: (f64, f64), text: &str) -> Text {
+fn create_text(position: (f32, f32), text: &str) -> Text {
     Text::new()
         .add(svg::node::Text::new(text))
         .set("x", position.0)
@@ -26,7 +27,7 @@ fn create_text(position: (f64, f64), text: &str) -> Text {
         .set("font-size", 8)
         .set("fill", "green")
 }
-fn create_line(from: (f64, f64), to: (f64, f64), color: &str, width: f64) -> Path {
+fn create_line(from: (f32, f32), to: (f32, f32), color: &str, width: f32) -> Path {
     let data = Data::new().move_to(from).line_to(to);
     Path::new()
         .set("fill", "none")
@@ -41,51 +42,78 @@ fn create_line(from: (f64, f64), to: (f64, f64), color: &str, width: f64) -> Pat
 #[derive(Debug, Default)]
 struct WatchRecord {
     start_date: String,
-    value: f64,
+    value: f32,
+}
+
+struct HeartRecord {
+    time_norm: f32,
+    bpm_value: f32,
+    date_string: String,
+}
+
+#[derive(Debug)]
+struct NiceDate {
+    full_time_int: u32,
+    date_int: u32,
+    time: u32,
+    time_string: String,
+}
+fn date_reformat(strdate: &str) -> Option<NiceDate> {
+    let x: Vec<_> = strdate.split(' ').collect();
+    let date = x.first().unwrap().replace('-', "").parse::<u32>().unwrap();
+    let t_ = x.get(1).unwrap().to_string();
+    let mut time: Vec<u32> = t_.split(':').map(|x| x.parse().unwrap()).collect();
+    time[0] *= 3600;
+    time[1] *= 60;
+    let t: u32 = time.iter().sum();
+
+    let full_time_int = date * 100_000 + t;
+
+    Some(NiceDate {
+        full_time_int,
+        date_int: date,
+        time: t,
+        time_string: t_,
+    })
 }
 
 // Simple string formatting
-fn format_watch_record(wr: WatchRecord) -> (f64, f64, f64, String) {
-    //
+fn format_watch_record(wr: WatchRecord) -> HeartRecord {
     let ss = wr.start_date.split(' ').collect::<Vec<&str>>();
-
-    let date = ss.first().unwrap();
+    let date = ss.first().unwrap().to_string();
     let time = ss.get(1).unwrap();
     let t = time
         .split(':')
         .filter_map(|x| x.parse().ok())
         .collect::<Vec<u32>>();
-
-    let d = date
-        .split('-')
-        .filter_map(|x| x.parse().ok())
-        .collect::<Vec<u32>>();
-
     let secs = t[0] * 3600 + t[1] * 60 + t[2];
     let maxsecs = 24 * 3600;
-    let time_norm: f64 = secs as f64 / maxsecs as f64;
-    let y: String = format!("{}{}{}", d[0], d[1], d[2]);
-    let y_: u32 = y.parse().unwrap_or(0);
-
-    (time_norm, y_ as f64, wr.value, format!("{}", date))
+    let time_norm: f32 = secs as f32 / maxsecs as f32;
+    HeartRecord {
+        time_norm,
+        bpm_value: wr.value,
+        date_string: date,
+    }
 }
 
 // pixel sizes for A4 page
-const PAGE_WIDTH: f64 = 793.70079;
-const PAGE_HEIGHT: f64 = 1122.51969;
+const PAGE_WIDTH: f32 = 793.70079;
+const PAGE_HEIGHT: f32 = 1122.51969;
 const DAYS_PER_PAGE: i32 = 20;
 
-const DAY_SCALE: f64 = 0.13;
-const VALUE_SCALE: f64 = 0.001;
-const X_SCALE: f64 = PAGE_WIDTH;
-const Y_SCALE: f64 = -400.0;
-const MAX_RECORD_READ: i32 = 108_500_000;
+const DAY_SCALE: f32 = 0.13;
+const VALUE_SCALE: f32 = 0.001;
+const X_SCALE: f32 = PAGE_WIDTH;
+const Y_SCALE: f32 = -400.0;
+const MAX_RECORD_READ: i32 = 308_500_000;
 
 fn main() {
-    let path = "output.log";
-    let mut output = File::create(path).unwrap();
+    // let path = "output.log";
+    // let mut output = File::create(path).unwrap();
     //
     let mut filenum: i32 = 0;
+    let logfilename = format!("output_{}.log", filenum);
+    let mut output = File::create(logfilename).unwrap();
     let mut paths: Vec<Box<dyn svg::node::Node>> = Vec::new();
 
     // your XML there...
@@ -98,101 +126,147 @@ fn main() {
     let mut day: i32 = 0;
     let mut old_start_date = "---".to_string();
 
+    let mut hrs: Vec<NiceDate> = Vec::new();
     'records: for e in parser {
         //
         record_num += 1;
 
         match &e {
-            Ok(XmlEvent::StartElement {
-                name, attributes, ..
-            }) => {
+            Ok(XmlEvent::StartElement { attributes, .. }) => {
                 let mut watch_record = WatchRecord::default();
-                let mut is_watch_record = false;
-                for i in attributes {
-                    let v = i.value.to_string();
-                    let n = i.name.to_string();
-                    let nn = n.as_str();
-                    match nn {
-                        "startDate" => watch_record.start_date = v.clone(),
+                // let mut is_watch_record = false;
+                let mut is_heart_rate_record = false;
+                for attrib in attributes {
+                    let value = attrib.value.to_string();
+                    let name = attrib.name.to_string();
+                    let name_str = name.as_str();
+                    match name_str {
+                        "startDate" => watch_record.start_date = value.clone(),
                         "value" => {
-                            let vv: Result<f64, std::num::ParseFloatError> = v.parse();
-                            match vv {
-                                Ok(vv) if { vv > 10.0 && vv < 300.0 } => watch_record.value = vv,
-                                // Err(e) => (){
-                                //     println!("ERR: {:?}", e);
-                                //     println!("v is: {:?} ", v);
-                                // }
+                            let value_parsed: Result<f32, std::num::ParseFloatError> =
+                                value.parse();
+                            match value_parsed {
+                                Ok(v) if { v > 10.0 && v < 300.0 } => watch_record.value = v,
                                 _ => (),
                             }
                         }
-                        // TODO!
-                        // need to make sure: unit="count/min" 
-                        // unit is name and "count/min" is value
-                        "sourceName" if { v.ends_with("Watch") } => is_watch_record = true,
+                        // "sourceName" if { value.ends_with("Watch") } => is_watch_record = true,
+                        "type" if { value.ends_with("HeartRate") } => is_heart_rate_record = true,
                         _ => (),
                     }
                 }
 
-                if is_watch_record {
-                    let (mut x, mut y, v, date) = format_watch_record(watch_record);
+                // let sd = watch_record.start_date.clone();
+                // let date_: Vec<_> = sd.split(' ').collect();
+                // let date__ = date_.first().unwrap().to_string();
 
-                    let writeline = format!("{} {} {} {}", &y, &v, &date, &x);
-                    writeln!(output, "{}", writeline).ok();
-
-                    let yy = y.clone().to_string();
-                    if yy != old_start_date {
-                        // println!("> filenum: {}, date: {}", filenum, &date);
-                        old_start_date = yy;
-
-                        y = day as f64 * DAY_SCALE;
-
-                        // trace lines for 50,100,150 bpm
-                        let y_50 = (y + 50.0 * VALUE_SCALE) * Y_SCALE + PAGE_HEIGHT;
-                        let y_100 = (y + 100.0 * VALUE_SCALE) * Y_SCALE + PAGE_HEIGHT;
-                        let y_150 = (y + 150.0 * VALUE_SCALE) * Y_SCALE + PAGE_HEIGHT;
-
-                        let line = create_line((0.0, y_50), (PAGE_WIDTH, y_50), "green", 0.4);
-                        paths.push(Box::new(line));
-                        let line = create_line((0.0, y_100), (PAGE_WIDTH, y_100), "blue", 0.4);
-                        paths.push(Box::new(line));
-                        let line = create_line((0.0, y_150), (PAGE_WIDTH, y_150), "red", 0.4);
-                        paths.push(Box::new(line));
-
-                        let text = create_text((0.0, y_50 + 8.0), &date);
-                        paths.push(Box::new(text));
-                        day += 1;
+                // if is_watch_record && is_heart_rate_record {
+                if is_heart_rate_record {
+                    // let sd = watch_record.start_date.clone();
+                    // let date_: Vec<_> = sd.split(' ').collect();
+                    let nice_date = date_reformat(&watch_record.start_date);
+                    match nice_date {
+                        Some(n) => hrs.push(n),
+                        None => (),
                     }
 
-                    y = day as f64 * DAY_SCALE;
-                    y += v * VALUE_SCALE;
-                    x *= X_SCALE;
-                    y *= Y_SCALE;
-                    y += PAGE_HEIGHT;
-
-                    // create a line of zero length
-                    let point = create_line((x, y), (x, y), "black", 1.0);
-                    paths.push(Box::new(point));
-
-                    if day > DAYS_PER_PAGE || (record_num > MAX_RECORD_READ) {
-                        day = 0;
-                        let filename = format!("image_{}.svg", filenum);
-                        filenum += 1;
-                        let d = doc(paths);
-                        svg::save(&filename, &d).unwrap();
-                        paths = Vec::new();
-                    }
-                    if record_num > MAX_RECORD_READ {
-                        break 'records;
-                    }
+                    //     let writeline = format!("{} {} {} {}", &_gy, &v, &date, &x);
+                    //     writeln!(output, "{}", writeline).ok();
+                    //
+                    //     let mut y = day as f32 * DAY_SCALE;
+                    //     if date__ != old_start_date {
+                    //         println!("date__:{} old_startdate:{}", &date__, &old_start_date);
+                    //         old_start_date = date__.clone();
+                    //         day += 1;
+                    //
+                    //         // trace lines for 50,100,150 bpm
+                    //
+                    //         let y_50 = (y + 50.0 * VALUE_SCALE) * Y_SCALE + PAGE_HEIGHT;
+                    //         let y_100 = (y + 100.0 * VALUE_SCALE) * Y_SCALE + PAGE_HEIGHT;
+                    //         let y_150 = (y + 150.0 * VALUE_SCALE) * Y_SCALE + PAGE_HEIGHT;
+                    //
+                    //         let line = create_line((0.0, y_50), (PAGE_WIDTH, y_50), "green", 0.4);
+                    //         paths.push(Box::new(line));
+                    //         let line = create_line((0.0, y_100), (PAGE_WIDTH, y_100), "blue", 0.4);
+                    //         paths.push(Box::new(line));
+                    //         let line = create_line((0.0, y_150), (PAGE_WIDTH, y_150), "red", 0.4);
+                    //         paths.push(Box::new(line));
+                    //
+                    //         let text = create_text((0.0, y_50 + 8.0), &date);
+                    //         paths.push(Box::new(text));
+                    //     }
+                    //
+                    //     // y = day as f32 * DAY_SCALE;
+                    //     y += v * VALUE_SCALE;
+                    //     x *= X_SCALE;
+                    //     y *= Y_SCALE;
+                    //     y += PAGE_HEIGHT;
+                    //
+                    //     // create a line of zero length
+                    //     let point = create_line((x, y), (x, y), "black", 1.0);
+                    //     paths.push(Box::new(point));
+                    //
+                    //     let writeline = format!("point: {} {}\n", &x, &y);
+                    //     writeln!(output, "{}", writeline).ok();
+                    //
+                    //     // if day > DAYS_PER_PAGE || (record_num > MAX_RECORD_READ) {
                 }
             }
             Err(e) => {
                 println!("Error: {}", e);
                 break;
             }
-            _ => {}
+            _ => (),
         }
     }
+
+    let mut old_date = 0;
+    let mut day = 0;
+
+    hrs.sort_by(|a, b| a.full_time_int.cmp(&b.full_time_int));
+    hrs.dedup_by(|a, b| a.time.eq(&b.time));
+
+    // for i in hrs {
+    //     println!("> {:?}", i);
+    // }
+
+    // let mut output = File::create(logfilename).unwrap();
+    for hr in hrs {
+        let writeline = format!("{} : {} : {}", hr.date_int, hr.time, hr.time_string);
+        writeln!(output, "{}", writeline).ok();
+
+        if hr.date_int != old_date {
+            day += 1;
+            old_date = hr.date_int;
+        }
+        if day > DAYS_PER_PAGE {
+            day = 0;
+            // let filename = format!("image_{}.svg", filenum);
+            filenum += 1;
+            // let d = doc(paths.clone());
+            // svg::save(&filename, &d).unwrap();
+            // //
+            // drop(d);
+            // paths.clear();
+
+            let logfilename = format!("output_{}.log", filenum);
+            output = File::create(logfilename).unwrap();
+
+            // paths.clear();
+        }
+        // if record_num > MAX_RECORD_READ {
+        //     break 'records;
+        // }
+    }
+
+    // write the next file is paths not empty
+    // if paths.len() > 0 {
+    //     filenum += 1;
+    //     let filename = format!("image_{}.svg", filenum);
+    //     let d = doc(paths);
+    //     svg::save(&filename, &d).unwrap();
+    //     // paths.clear();
+    // }
 }
 fn doc(paths: Vec<Box<dyn svg::node::Node>>) -> Document {
     let document = Document::new()
