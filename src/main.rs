@@ -21,7 +21,6 @@ struct WatchRecord {
 #[derive(Debug)]
 struct HeartRecord {
     time_int: u32,
-    date_int: u32,
     date_str: String,
     time_norm: f32,
     bpm: f32,
@@ -29,7 +28,6 @@ struct HeartRecord {
 fn date_reformat(strdate: &str, value: &f32) -> Option<HeartRecord> {
     // from: "2020-09-30 20:59:01 -0700" extract:
     // time_int  = 20200930205901 (to sort list)
-    // date_int  = 20200930
     // date_str  = "2020-09-30"
     // time_norm = time/(3600*24)
     //
@@ -47,7 +45,6 @@ fn date_reformat(strdate: &str, value: &f32) -> Option<HeartRecord> {
 
     Some(HeartRecord {
         time_int: full_time_int,
-        date_int: date,
         date_str: x.first().unwrap().to_string(),
         time_norm,
         bpm: *value,
@@ -73,6 +70,7 @@ fn main() {
     let parser = EventReader::new(file);
 
     let mut hrs: Vec<HeartRecord> = Vec::new();
+    println!("reading XML data ...");
     for e in parser {
         match &e {
             Ok(XmlEvent::StartElement { attributes, .. }) => {
@@ -113,7 +111,7 @@ fn main() {
         }
     }
 
-    let mut old_date = 0;
+    let mut old_date = "".to_string();
     let mut day = 0;
 
     hrs.sort_by(|a, b| a.time_int.cmp(&b.time_int));
@@ -126,9 +124,9 @@ fn main() {
     for hr in hrs {
         let mut y = day as f32 * DAY_SCALE;
 
-        if hr.date_int != old_date {
+        if hr.date_str != old_date {
             day += 1;
-            old_date = hr.date_int;
+            old_date = hr.date_str.clone();
 
             // trace lines for 50,100,150 bpm and text for date
             let y_50 = (y + 50.0 * VALUE_SCALE) * Y_SCALE + PAGE_HEIGHT;
@@ -154,11 +152,12 @@ fn main() {
         paths.push(Box::new(point));
 
         if day > DAYS_PER_PAGE {
-            day = 0;
             filenum += 1;
             let filename = format!("image_{}.svg", filenum);
             svg::save(&filename, &doc(paths.clone())).unwrap();
             paths.clear();
+            println!("writing SVG: {}", &filename);
+            day = 0;
         }
     }
 }
