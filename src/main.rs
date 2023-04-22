@@ -15,17 +15,17 @@ use svg::Document;
 #[derive(Debug, Default)]
 struct WatchRecord {
     date: String,
-    value: f32,
+    value: f64,
 }
 
 #[derive(Debug)]
 struct HeartRecord {
     time_int: u32,
     date_str: String,
-    time_norm: f32,
-    bpm: f32,
+    time_norm: f64,
+    bpm: f64,
 }
-fn date_reformat(strdate: &str, value: &f32) -> Option<HeartRecord> {
+fn date_reformat(strdate: &str, value: &f64) -> Option<HeartRecord> {
     // from: "2020-09-30 20:59:01 -0700" extract:
     // time_int  = 20200930205901 (to sort list)
     // date_str  = "2020-09-30"
@@ -41,7 +41,7 @@ fn date_reformat(strdate: &str, value: &f32) -> Option<HeartRecord> {
     let t: u32 = time.iter().sum();
     let full_time_int = date * 100_000 + t;
     let maxsecs = 24 * 3600;
-    let time_norm: f32 = t as f32 / maxsecs as f32;
+    let time_norm: f64 = t as f64 / maxsecs as f64;
 
     Some(HeartRecord {
         time_int: full_time_int,
@@ -52,14 +52,14 @@ fn date_reformat(strdate: &str, value: &f32) -> Option<HeartRecord> {
 }
 
 // pixel sizes for A4 page
-const PAGE_WIDTH: f32 = 793.70079;
-const PAGE_HEIGHT: f32 = 1122.51969;
+const PAGE_WIDTH: f64 = 793.700_8;
+const PAGE_HEIGHT: f64 = 1_122.519_7;
 const DAYS_PER_PAGE: i32 = 20;
 
-const DAY_SCALE: f32 = 0.13;
-const VALUE_SCALE: f32 = 0.001;
-const X_SCALE: f32 = PAGE_WIDTH;
-const Y_SCALE: f32 = -400.0;
+const DAY_SCALE: f64 = 0.13;
+const VALUE_SCALE: f64 = 0.001;
+const X_SCALE: f64 = PAGE_WIDTH;
+const Y_SCALE: f64 = -400.0;
 
 fn main() {
     // your XML there...
@@ -83,7 +83,7 @@ fn main() {
                     match name_str {
                         "startDate" => watch_record.date = value.clone(),
                         "value" => {
-                            let value_parsed: Result<f32, std::num::ParseFloatError> =
+                            let value_parsed: Result<f64, std::num::ParseFloatError> =
                                 value.parse();
                             match value_parsed {
                                 Ok(v) if { v > 10.0 && v < 300.0 } => watch_record.value = v,
@@ -97,10 +97,9 @@ fn main() {
 
                 if is_heart_rate_record {
                     let nice_date = date_reformat(&watch_record.date, &watch_record.value);
-                    match nice_date {
-                        Some(n) => hrs.push(n),
-                        None => (),
-                    }
+                    if let Some(n) = nice_date {
+                        hrs.push(n)
+                    };
                 }
             }
             Err(e) => {
@@ -111,19 +110,20 @@ fn main() {
         }
     }
 
-    let mut old_date = "".to_string();
-    let mut day = 0;
-
+    // sort heart records and remove duplicates
     hrs.sort_by(|a, b| a.time_int.cmp(&b.time_int));
     hrs.dedup_by(|a, b| a.time_int.eq(&b.time_int));
 
+    let mut day = 0;
+    let mut old_date = "".to_string();
     let mut filenum: i32 = 0;
-
     let mut paths: Vec<Box<dyn svg::node::Node>> = Vec::new();
 
     for hr in hrs {
-        let mut y = day as f32 * DAY_SCALE;
+        // x,y are coordinates on the SVG document
+        let mut y = day as f64 * DAY_SCALE;
 
+        // new day
         if hr.date_str != old_date {
             day += 1;
             old_date = hr.date_str.clone();
@@ -142,12 +142,13 @@ fn main() {
             let text = create_text((0.0, y_50 + 8.0), &hr.date_str);
             paths.push(Box::new(text));
         }
+
         let x = hr.time_norm * X_SCALE;
         y += hr.bpm * VALUE_SCALE;
         y *= Y_SCALE;
         y += PAGE_HEIGHT;
 
-        // create a line of zero length
+        // create points (lines of zero length)
         let point = create_line((x, y), (x, y), "black", 1.0);
         paths.push(Box::new(point));
 
@@ -162,7 +163,7 @@ fn main() {
     }
 }
 
-fn create_line(from: (f32, f32), to: (f32, f32), color: &str, width: f32) -> Path {
+fn create_line(from: (f64, f64), to: (f64, f64), color: &str, width: f64) -> Path {
     let data = Data::new().move_to(from).line_to(to);
     Path::new()
         .set("fill", "none")
@@ -172,7 +173,7 @@ fn create_line(from: (f32, f32), to: (f32, f32), color: &str, width: f32) -> Pat
         .set("stroke-linecap", "round")
         .set("d", data)
 }
-fn create_text(position: (f32, f32), text: &str) -> Text {
+fn create_text(position: (f64, f64), text: &str) -> Text {
     Text::new()
         .add(svg::node::Text::new(text))
         .set("x", position.0)
