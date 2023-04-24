@@ -145,12 +145,11 @@ fn main() {
         paths.push(Box::new(point));
 
         if day > DAYS_PER_PAGE {
-            filenum += 1;
             let filename = format!("image_{:03}.svg", filenum);
-            println!("__ {}",filename);
             svg::save(&filename, &doc(paths.clone())).unwrap();
             paths.clear();
             println!("writing SVG: {}", &filename);
+            filenum += 1;
             day = 0;
         }
     }
