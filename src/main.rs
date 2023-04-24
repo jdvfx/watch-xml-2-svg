@@ -2,15 +2,17 @@
 // the heart rate data to SVG
 // split data per day and multiple days per SVG file
 
+pub mod svgfn;
+pub use svgfn::*;
+
+mod conf;
+use conf::*;
+
 extern crate xml;
 use xml::reader::{EventReader, XmlEvent};
 
 use std::fs::File;
 use std::io::BufReader;
-
-use svg::node::element::path::Data;
-use svg::node::element::{Path, Text};
-use svg::Document;
 
 #[derive(Debug, Default)]
 struct WatchRecord {
@@ -50,16 +52,6 @@ fn date_reformat(strdate: &str, value: &f64) -> Option<HeartRecord> {
         bpm: *value,
     })
 }
-
-// pixel sizes for A4 page
-const PAGE_WIDTH: f64 = 793.700_8;
-const PAGE_HEIGHT: f64 = 1_122.519_7;
-const DAYS_PER_PAGE: i32 = 20;
-
-const DAY_SCALE: f64 = 0.13;
-const VALUE_SCALE: f64 = 0.001;
-const X_SCALE: f64 = PAGE_WIDTH;
-const Y_SCALE: f64 = -400.0;
 
 fn main() {
     // your XML there...
@@ -154,43 +146,12 @@ fn main() {
 
         if day > DAYS_PER_PAGE {
             filenum += 1;
-            let filename = format!("image_{}.svg", filenum);
+            let filename = format!("image_{:03}.svg", filenum);
+            println!("__ {}",filename);
             svg::save(&filename, &doc(paths.clone())).unwrap();
             paths.clear();
             println!("writing SVG: {}", &filename);
             day = 0;
         }
     }
-}
-
-fn create_line(from: (f64, f64), to: (f64, f64), color: &str, width: f64) -> Path {
-    let data = Data::new().move_to(from).line_to(to);
-    Path::new()
-        .set("fill", "none")
-        .set("stroke", color)
-        .set("stroke-width", width)
-        .set("stroke-linejoin", "square")
-        .set("stroke-linecap", "round")
-        .set("d", data)
-}
-fn create_text(position: (f64, f64), text: &str) -> Text {
-    Text::new()
-        .add(svg::node::Text::new(text))
-        .set("x", position.0)
-        .set("y", position.1)
-        .set("text-anchor", "start")
-        .set("font-family", "monospace")
-        .set("alignment-baseline", "middle")
-        .set("font-size", 8)
-        .set("fill", "green")
-}
-fn doc(paths: Vec<Box<dyn svg::node::Node>>) -> Document {
-    let document = Document::new()
-        .set("width", PAGE_WIDTH)
-        .set("height", PAGE_HEIGHT)
-        .set("viewBox", (PAGE_WIDTH, PAGE_HEIGHT))
-        .set("style", "background-color: white;");
-    paths
-        .into_iter()
-        .fold(document, |document, path| document.add(path))
 }
