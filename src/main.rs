@@ -40,20 +40,18 @@ fn reformat_date(xmldata: &XmlDate) -> Result<HeartRecord, Box<dyn Error>> {
     // time = "2:34:56.34 PM"
     // bpm = "69"
     //
-    let _xmldata = xmldata.clone();
-    let bpm: f64 = _xmldata.bpm.parse()?;
-    let x = _xmldata.date.split_whitespace().collect::<Vec<_>>();
+    let bpm: f64 = xmldata.bpm.parse()?;
+    let x = xmldata.date.split_whitespace().collect::<Vec<_>>();
     let date_str = x.first().ok_or("no date")?.to_string();
     let date_ = date_str.replace('-', "").parse::<u64>()?;
 
-    let t_: &str;
-    match &xmldata.time {
-        None => t_ = x.get(1).ok_or("no time")?,
+    let t_: &str = match &xmldata.time {
+        None => x.get(1).ok_or("no time")?,
         Some(t) => {
-            let t_0: Vec<_> = t.split(".").collect();
-            t_ = t_0.get(0).ok_or("no time")?;
+            let t_0: Vec<_> = t.split('.').collect();
+            t_0.first().ok_or("no time")?
         }
-    }
+    };
     let mut time_: Vec<u64> = t_
         .split(':')
         .filter_map(|x| x.parse::<u64>().ok())
@@ -146,7 +144,6 @@ fn main() {
                     };
 
                     let nice_date = reformat_date(&rec);
-                    // println!(" >>> {:?}", nice_date);
                     if let Ok(n) = nice_date {
                         hrs.push(n)
                     };
